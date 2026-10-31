@@ -1,10 +1,10 @@
-
 import * as THREE from 'three';
 
 export class CollisionSystem {
     constructor() {
         this.objects = [];
         this.playerRadius = 0.45;
+        this.playerHeight = 1.7;
     }
 
     add(object) {
@@ -12,24 +12,28 @@ export class CollisionSystem {
     }
 
     addMany(objects) {
-        this.objects.push(...objects);
+        for (const object of objects) {
+            this.add(object);
+        }
     }
 
     check(position) {
         const playerBox = new THREE.Box3().setFromCenterAndSize(
             new THREE.Vector3(
                 position.x,
-                position.y,
+                position.y - this.playerHeight / 2,
                 position.z
             ),
             new THREE.Vector3(
                 this.playerRadius * 2,
-                1.7,
+                this.playerHeight,
                 this.playerRadius * 2
             )
         );
 
         for (const object of this.objects) {
+            if (!object || !object.parent) continue;
+
             const objectBox = new THREE.Box3().setFromObject(object);
 
             if (playerBox.intersectsBox(objectBox)) {
@@ -41,24 +45,26 @@ export class CollisionSystem {
     }
 
     resolve(oldPosition, newPosition) {
-        const result = newPosition.clone();
+        const result = oldPosition.clone();
 
-        if (!this.check(result)) {
-            return result;
+        const testX = oldPosition.clone();
+        testX.x = newPosition.x;
+
+        if (!this.check(testX)) {
+            result.x = newPosition.x;
         }
 
-        result.x = newPosition.x;
+        const testZ = result.clone();
+        testZ.z = newPosition.z;
 
-        if (this.check(result)) {
-            result.x = oldPosition.x;
-        }
-
-        result.z = newPosition.z;
-
-        if (this.check(result)) {
-            result.z = oldPosition.z;
+        if (!this.check(testZ)) {
+            result.z = newPosition.z;
         }
 
         return result;
+    }
+
+    clear() {
+        this.objects = [];
     }
 }
