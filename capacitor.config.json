@@ -1,0 +1,6 @@
+{
+  "appId": "com.projectzero.fps",
+  "appName": "PROJECT ZERO",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
