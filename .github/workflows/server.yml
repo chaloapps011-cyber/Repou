@@ -1,5 +1,4 @@
-
-name: PROJECT ZERO Build & Server Check
+name: PROJECT ZERO APK Build
 
 on:
   push:
@@ -7,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-project:
+  build-apk:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,6 +18,12 @@ jobs:
         with:
           node-version: 22
 
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
       - name: Prepare package
         run: cp Package.json package.json
 
@@ -28,5 +33,34 @@ jobs:
       - name: Check server syntax
         run: node --check Secretaria/Server.js
 
-      - name: Build PROJECT ZERO
+      - name: Build web game
         run: npm run build
+
+      - name: Create Android project
+        run: npx cap add android
+
+      - name: Prepare app icon
+        run: |
+          mkdir -p assets
+          cp "Assets/23 Sem Título_20261031183014.png" assets/icon.png
+
+      - name: Generate Android icons
+        run: |
+          npm install --no-save @capacitor/assets
+          npx capacitor-assets generate --android
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload PROJECT ZERO APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PROJECT-ZERO-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
