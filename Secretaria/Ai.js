@@ -51,7 +51,14 @@ export class EnemyAI {
 
         const nextPosition = enemy.position.clone().add(movement);
 
-        if (this.collision && this.collision.check(nextPosition)) {
+        // Altura de referência para a colisão do soldado
+        const collisionPosition = nextPosition.clone();
+        collisionPosition.y = 1.7;
+
+        if (
+            this.collision &&
+            this.collision.check(collisionPosition, enemy)
+        ) {
             return;
         }
 
