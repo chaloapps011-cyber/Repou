@@ -1,15 +1,17 @@
 import * as THREE from 'three';
 
 export class EnemyAI {
-    constructor(enemySystem, player, healthSystem) {
+    constructor(enemySystem, player, healthSystem, collision) {
         this.enemySystem = enemySystem;
         this.player = player;
         this.health = healthSystem;
+        this.collision = collision;
 
         this.detectionRange = 25;
         this.attackRange = 2;
         this.moveSpeed = 1.8;
-        this.attackCooldown = 0;
+        this.attackDamage = 8;
+        this.attackInterval = 1.2;
     }
 
     update(delta) {
@@ -18,46 +20,51 @@ export class EnemyAI {
         for (const enemy of this.enemySystem.enemies) {
             if (!enemy.userData.alive) continue;
 
-            const distance = enemy.position.distanceTo(
-                this.player.position
-            );
-
-            if (distance > this.detectionRange) continue;
-
             const direction = new THREE.Vector3()
                 .subVectors(this.player.position, enemy.position);
 
             direction.y = 0;
 
-            if (direction.lengthSq() > 0) {
-                direction.normalize();
-                enemy.rotation.y = Math.atan2(
-                    direction.x,
-                    direction.z
-                );
-            }
+            const distance = direction.length();
+
+            if (distance > this.detectionRange) continue;
+
+            direction.normalize();
+
+            enemy.rotation.y = Math.atan2(
+                direction.x,
+                direction.z
+            );
 
             if (distance > this.attackRange) {
-                enemy.position.addScaledVector(
-                    direction,
-                    this.moveSpeed * delta
-                );
+                this.moveEnemy(enemy, direction, delta);
             } else {
                 this.attack(enemy, delta);
             }
         }
     }
 
+    moveEnemy(enemy, direction, delta) {
+        const movement = direction.clone().multiplyScalar(
+            this.moveSpeed * delta
+        );
+
+        const nextPosition = enemy.position.clone().add(movement);
+
+        if (this.collision && this.collision.check(nextPosition)) {
+            return;
+        }
+
+        enemy.position.copy(nextPosition);
+    }
+
     attack(enemy, delta) {
-        enemy.userData.attackTimer =
-            (enemy.userData.attackTimer || 0) - delta;
+        enemy.userData.attackTimer -= delta;
 
         if (enemy.userData.attackTimer > 0) return;
 
-        enemy.userData.attackTimer = 1.2;
+        enemy.userData.attackTimer = this.attackInterval;
 
-        this.health.takeDamage(8);
-
-        console.log('PROJECT ZERO: PLAYER HIT');
+        this.health.takeDamage(this.attackDamage);
     }
 }
