@@ -8,7 +8,9 @@ export class CollisionSystem {
     }
 
     add(object) {
-        this.objects.push(object);
+        if (object && !this.objects.includes(object)) {
+            this.objects.push(object);
+        }
     }
 
     addMany(objects) {
@@ -17,7 +19,11 @@ export class CollisionSystem {
         }
     }
 
-    check(position) {
+    remove(object) {
+        this.objects = this.objects.filter(item => item !== object);
+    }
+
+    check(position, ignoredObject = null) {
         const playerBox = new THREE.Box3().setFromCenterAndSize(
             new THREE.Vector3(
                 position.x,
@@ -33,6 +39,7 @@ export class CollisionSystem {
 
         for (const object of this.objects) {
             if (!object || !object.parent) continue;
+            if (object === ignoredObject) continue;
 
             const objectBox = new THREE.Box3().setFromObject(object);
 
