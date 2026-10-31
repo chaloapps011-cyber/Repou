@@ -12,7 +12,11 @@ export class WaveSystem {
         this.waiting = false;
         this.finished = false;
 
+        this.baseHealth = 100;
+        this.healthIncrease = 15;
+
         this.createUI();
+        this.applyCurrentWaveHealth();
     }
 
     createUI() {
@@ -34,8 +38,23 @@ export class WaveSystem {
         `;
 
         document.body.appendChild(this.element);
-
         this.updateUI();
+    }
+
+    getEnemyHealth() {
+        return this.baseHealth +
+            (this.wave - 1) * this.healthIncrease;
+    }
+
+    applyCurrentWaveHealth() {
+        const health = this.getEnemyHealth();
+
+        for (const enemy of this.enemySystem.enemies) {
+            if (!enemy.userData.alive) continue;
+
+            enemy.userData.health = health;
+            enemy.userData.maxHealth = health;
+        }
     }
 
     update(delta) {
@@ -70,12 +89,16 @@ export class WaveSystem {
         this.waiting = false;
 
         const amount = this.wave + 2;
+        const enemyHealth = this.getEnemyHealth();
 
         for (let i = 0; i < amount; i++) {
             const x = Math.random() * 70 - 35;
             const z = -30 - Math.random() * 35;
 
-            this.enemySystem.createEnemy(x, z);
+            const enemy = this.enemySystem.createEnemy(x, z);
+
+            enemy.userData.health = enemyHealth;
+            enemy.userData.maxHealth = enemyHealth;
         }
 
         this.updateUI();
@@ -87,7 +110,7 @@ export class WaveSystem {
                 `WAVE ${this.wave} COMPLETED | NEXT IN ${Math.ceil(this.timer)}s`;
         } else {
             this.element.textContent =
-                `WAVE ${this.wave} / ${this.maxWaves}`;
+                `WAVE ${this.wave} / ${this.maxWaves} | ENEMY HP: ${this.getEnemyHealth()}`;
         }
     }
 }
