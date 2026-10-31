@@ -1,7 +1,10 @@
 
 import * as THREE from 'three';
 
+// ======================================
 // MODULES
+// ======================================
+
 import { createWorld } from './world.js';
 import { CollisionSystem } from './collision.js';
 import { Player } from './player.js';
@@ -16,23 +19,33 @@ import { AudioSystem } from './audio.js';
 import { ObjectiveSystem } from './objectives.js';
 import { WaveSystem } from './waves.js';
 import { SecondMain } from './Secondmain.js';
+import { ReferenceCG } from './ReferenceCG.js';
 
+// ======================================
 // CONFIGURATION
+// ======================================
+
 const CONFIG = {
     name: 'PROJECT: ZERO',
     map: 'ABANDONED SECTOR',
-    maxFPS: 60,
     shadows: true
 };
 
+// ======================================
 // SCENE
+// ======================================
+
 const container = document.getElementById('game-container');
+
 const scene = new THREE.Scene();
 
 scene.background = new THREE.Color(0x89979b);
 scene.fog = new THREE.Fog(0x89979b, 35, 180);
 
+// ======================================
 // CAMERA
+// ======================================
+
 const camera = new THREE.PerspectiveCamera(
     75,
     window.innerWidth / window.innerHeight,
@@ -42,21 +55,31 @@ const camera = new THREE.PerspectiveCamera(
 
 camera.position.set(0, 1.7, 12);
 
+// ======================================
 // RENDERER
+// ======================================
+
 const renderer = new THREE.WebGLRenderer({
     antialias: true,
     powerPreference: 'high-performance'
 });
 
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+
+renderer.setPixelRatio(
+    Math.min(window.devicePixelRatio, 1.5)
+);
+
 renderer.shadowMap.enabled = CONFIG.shadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 container.appendChild(renderer.domElement);
 
+// ======================================
 // LIGHTING
+// ======================================
+
 const ambient = new THREE.HemisphereLight(
     0xc5d5df,
     0x353b32,
@@ -73,7 +96,10 @@ sun.shadow.mapSize.set(1024, 1024);
 
 scene.add(sun);
 
-// GROUND
+// ======================================
+// ENVIRONMENT
+// ======================================
+
 const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(250, 250),
     new THREE.MeshStandardMaterial({
@@ -87,7 +113,6 @@ ground.receiveShadow = true;
 
 scene.add(ground);
 
-// ROAD
 const road = new THREE.Mesh(
     new THREE.PlaneGeometry(35, 250),
     new THREE.MeshStandardMaterial({
@@ -101,12 +126,18 @@ road.position.y = 0.02;
 
 scene.add(road);
 
+// ======================================
 // COLLISION
+// ======================================
+
 const collision = new CollisionSystem();
 
 createWorld(scene, collision);
 
+// ======================================
 // PLAYER
+// ======================================
+
 const mobileControls = new MobileControls();
 
 const player = new Player(
@@ -115,16 +146,28 @@ const player = new Player(
     mobileControls
 );
 
+// ======================================
 // WEAPON
+// ======================================
+
 const weapon = new Weapon(camera, scene);
 
+// ======================================
 // ENEMIES
+// ======================================
+
 const enemies = new EnemySystem(scene, collision);
 
+// ======================================
 // HEALTH
+// ======================================
+
 const health = new HealthSystem(100);
 
+// ======================================
 // AI
+// ======================================
+
 const ai = new EnemyAI(
     enemies,
     player,
@@ -132,10 +175,16 @@ const ai = new EnemyAI(
     collision
 );
 
+// ======================================
 // AMMO
+// ======================================
+
 const ammo = new AmmoSystem();
 
+// ======================================
 // SHOOTING
+// ======================================
+
 const shooting = new ShootingSystem(
     camera,
     weapon,
@@ -143,18 +192,30 @@ const shooting = new ShootingSystem(
     enemies
 );
 
+// ======================================
 // AUDIO
+// ======================================
+
 const audio = new AudioSystem();
 
+// ======================================
 // OBJECTIVES
+// ======================================
+
 const objectives = new ObjectiveSystem();
 
 objectives.complete(1);
 
+// ======================================
 // WAVES
+// ======================================
+
 const waves = new WaveSystem(enemies);
 
+// ======================================
 // SECOND MAIN
+// ======================================
+
 const secondMain = new SecondMain({
     scene,
     camera,
@@ -165,9 +226,63 @@ const secondMain = new SecondMain({
     waves
 });
 
+// O menu do SecondMain não será o menu inicial.
+// O ReferenceCG ficará responsável pela seleção de modos.
+
+secondMain.menu.classList.add('pz-hidden');
+
+// ======================================
+// REFERENCE CG
+// ======================================
+
+const referenceCG = new ReferenceCG({
+    scene,
+    camera,
+    renderer
+});
+
+// ======================================
+// GAME STATE
+// ======================================
+
+let currentMode = null;
+let gameStarted = false;
+
+// ======================================
+// MODE EVENTS
+// ======================================
+
+window.addEventListener('referencecg:sandboxstart', () => {
+    currentMode = 'SANDBOX';
+    gameStarted = true;
+
+    secondMain.started = true;
+    secondMain.paused = false;
+
+    console.log('SANDBOX MODE INITIALIZED');
+});
+
+window.addEventListener('referencecg:sandboxexit', () => {
+    gameStarted = false;
+    secondMain.started = false;
+
+    mobileControls.sprinting = false;
+
+    console.log('SANDBOX MODE CLOSED');
+});
+
+window.addEventListener('referencecg:modechange', event => {
+    currentMode = event.detail.mode;
+
+    console.log('SELECTED MODE:', currentMode);
+});
+
+// ======================================
 // ACTIONS
+// ======================================
+
 function fire() {
-    if (!secondMain.started) return;
+    if (!gameStarted) return;
     if (secondMain.paused || secondMain.finished) return;
     if (!health.alive) return;
     if (ammo.magazine <= 0 || ammo.reloading) return;
@@ -177,7 +292,7 @@ function fire() {
 }
 
 function reload() {
-    if (!secondMain.started) return;
+    if (!gameStarted) return;
     if (secondMain.paused || secondMain.finished) return;
     if (!health.alive) return;
     if (ammo.reloading || ammo.magazine >= ammo.magazineSize) return;
@@ -186,7 +301,10 @@ function reload() {
     audio.reload();
 }
 
-// MOBILE FIRE
+// ======================================
+// MOBILE BUTTONS
+// ======================================
+
 const fireButton = document.querySelector('.action-button');
 const sprintButton = document.querySelector('.sprint-button');
 
@@ -197,10 +315,9 @@ if (fireButton) {
     });
 }
 
-// MOBILE SPRINT
 if (sprintButton) {
     sprintButton.addEventListener('pointerdown', () => {
-        if (secondMain.started && !secondMain.paused) {
+        if (gameStarted && !secondMain.paused) {
             mobileControls.sprinting = true;
         }
     });
@@ -214,18 +331,29 @@ if (sprintButton) {
     sprintButton.addEventListener('lostpointercapture', stopSprint);
 }
 
+// ======================================
 // KEYBOARD
+// ======================================
+
 window.addEventListener('keydown', event => {
     if (event.code === 'KeyR') reload();
     if (event.code === 'Space') fire();
 });
 
+// ======================================
 // DESKTOP SHOOTING
+// ======================================
+
 renderer.domElement.addEventListener('pointerdown', event => {
-    if (event.pointerType === 'mouse') fire();
+    if (event.pointerType === 'mouse') {
+        fire();
+    }
 });
 
+// ======================================
 // GAME LOOP
+// ======================================
+
 const clock = new THREE.Clock();
 
 function animate() {
@@ -234,25 +362,16 @@ function animate() {
     const delta = Math.min(clock.getDelta(), 0.05);
 
     if (
-        secondMain.started &&
+        gameStarted &&
         !secondMain.paused &&
         !secondMain.finished
     ) {
-        if (health.alive) {
-            player.update(delta);
-            ai.update(delta);
-            waves.update(delta);
+        player.update(delta);
 
-            objectives.checkEnemies(enemies);
+        if (currentMode === 'SANDBOX') {
+            referenceCG.update(delta);
         }
 
-        // PROGRESSIVE DIFFICULTY
-        const difficulty = secondMain.updateWaveBalance();
-
-        ai.moveSpeed = difficulty.enemySpeed;
-        ai.attackDamage = difficulty.enemyDamage;
-
-        // SECOND MAIN SYSTEMS
         secondMain.update(delta, clock.elapsedTime);
     }
 
@@ -261,9 +380,13 @@ function animate() {
 
 animate();
 
+// ======================================
 // RESIZE
+// ======================================
+
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
+
     camera.updateProjectionMatrix();
 
     renderer.setSize(
@@ -272,8 +395,12 @@ window.addEventListener('resize', () => {
     );
 });
 
+// ======================================
 // INITIALIZATION
+// ======================================
+
 document.getElementById('loading').style.display = 'none';
 
 console.log('PROJECT ZERO INITIALIZED');
-console.log('SECOND MAIN CONNECTED');
+console.log('REFERENCE CG CONNECTED');
+console.log('SANDBOX SYSTEM READY');
