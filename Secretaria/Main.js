@@ -1,14 +1,21 @@
-
 import * as THREE from 'three';
 
 import { createWorld } from './world.js';
 import { CollisionSystem } from './collision.js';
 import { Player } from './player.js';
 import { MobileControls } from './mobile-controls.js';
-
-const container = document.getElementById('game-container');
+import { Weapon } from './weapon.js';
+import { EnemySystem } from './enemies.js';
+import { HealthSystem } from './health.js';
+import { EnemyAI } from './ai.js';
+import { AmmoSystem } from './ammo.js';
+import { ShootingSystem } from './shooting.js';
+import { AudioSystem } from './audio.js';
+import { ObjectiveSystem } from './objectives.js';
 
 // SCENE
+const container = document.getElementById('game-container');
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x89979b);
 scene.fog = new THREE.Fog(0x89979b, 35, 180);
@@ -38,9 +45,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 container.appendChild(renderer.domElement);
 
 // LIGHTING
-scene.add(
-    new THREE.HemisphereLight(0xc5d5df, 0x353b32, 2)
-);
+scene.add(new THREE.HemisphereLight(0xc5d5df, 0x353b32, 2));
 
 const sun = new THREE.DirectionalLight(0xffe2bd, 3);
 sun.position.set(-30, 50, 20);
@@ -48,7 +53,7 @@ sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 scene.add(sun);
 
-// TERRAIN
+// GROUND
 const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(250, 250),
     new THREE.MeshStandardMaterial({
@@ -77,17 +82,75 @@ scene.add(road);
 // WORLD
 createWorld(scene);
 
-// COLLISION
+// SYSTEMS
 const collision = new CollisionSystem();
-
-// PLAYER
 const mobileControls = new MobileControls();
+const player = new Player(camera, collision, mobileControls);
 
-const player = new Player(
+const weapon = new Weapon(camera, scene);
+const enemies = new EnemySystem(scene);
+const health = new HealthSystem();
+const ai = new EnemyAI(enemies, player, health);
+const ammo = new AmmoSystem();
+const audio = new AudioSystem();
+
+const shooting = new ShootingSystem(
     camera,
-    collision,
-    mobileControls
+    weapon,
+    ammo,
+    enemies
 );
+
+const objectives = new ObjectiveSystem();
+
+objectives.complete(1);
+
+// SHOOTING
+function fire() {
+    if (health.alive && ammo.magazine > 0 && !ammo.reloading) {
+        shooting.shoot();
+        audio.gunshot();
+    }
+}
+
+// RELOAD
+function reload() {
+    if (!health.alive) return;
+
+    if (!ammo.reloading && ammo.magazine < ammo.magazineSize) {
+        shooting.reload();
+        audio.reload();
+    }
+}
+
+// MOBILE BUTTONS
+const fireButton = document.querySelector('.action-button');
+const sprintButton = document.querySelector('.sprint-button');
+
+fireButton?.addEventListener('pointerdown', fire);
+
+sprintButton?.addEventListener('pointerdown', () => {
+    mobileControls.sprinting = true;
+});
+
+sprintButton?.addEventListener('pointerup', () => {
+    mobileControls.sprinting = false;
+});
+
+sprintButton?.addEventListener('pointercancel', () => {
+    mobileControls.sprinting = false;
+});
+
+// KEYBOARD
+window.addEventListener('keydown', event => {
+    if (event.code === 'KeyR') reload();
+    if (event.code === 'Space') fire();
+});
+
+// DESKTOP SHOOTING
+renderer.domElement.addEventListener('pointerdown', event => {
+    if (event.pointerType === 'mouse') fire();
+});
 
 // GAME LOOP
 const clock = new THREE.Clock();
@@ -97,7 +160,11 @@ function animate() {
 
     const delta = Math.min(clock.getDelta(), 0.05);
 
-    player.update(delta);
+    if (health.alive) {
+        player.update(delta);
+        ai.update(delta);
+        objectives.checkEnemies(enemies);
+    }
 
     renderer.render(scene, camera);
 }
@@ -115,7 +182,7 @@ window.addEventListener('resize', () => {
     );
 });
 
-// LOADING
 document.getElementById('loading').style.display = 'none';
 
-console.log('PROJECT ZERO INITIALIZED');
+console.log('PROJECT: ZERO INITIALIZED');
+console.log('ABANDONED SECTOR LOADED');
