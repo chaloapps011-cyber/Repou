@@ -1,4 +1,3 @@
-
 import * as THREE from 'three';
 
 // ======================================
@@ -20,6 +19,7 @@ import { ObjectiveSystem } from './objectives.js';
 import { WaveSystem } from './waves.js';
 import { SecondMain } from './Secondmain.js';
 import { ReferenceCG } from './ReferenceCG.js';
+import Mode from './Mode.js';
 
 // ======================================
 // CONFIGURATION
@@ -65,11 +65,7 @@ const renderer = new THREE.WebGLRenderer({
 });
 
 renderer.setSize(window.innerWidth, window.innerHeight);
-
-renderer.setPixelRatio(
-    Math.min(window.devicePixelRatio, 1.5)
-);
-
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = CONFIG.shadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -226,9 +222,6 @@ const secondMain = new SecondMain({
     waves
 });
 
-// O menu do SecondMain não será o menu inicial.
-// O ReferenceCG ficará responsável pela seleção de modos.
-
 secondMain.menu.classList.add('pz-hidden');
 
 // ======================================
@@ -240,6 +233,27 @@ const referenceCG = new ReferenceCG({
     camera,
     renderer
 });
+
+// ======================================
+// MODE SYSTEM
+// ======================================
+
+const modeSystem = new Mode({
+    scene,
+    camera,
+    renderer,
+    player,
+    enemies,
+    health,
+    ammo,
+    onModeChange: mode => {
+        console.log('MODE SYSTEM:', mode || 'INACTIVE');
+    }
+});
+
+// O ReferenceCG permanece responsável pelo menu.
+// O menu duplicado do Mode fica oculto.
+modeSystem.menu.style.display = 'none';
 
 // ======================================
 // GAME STATE
@@ -256,6 +270,10 @@ window.addEventListener('referencecg:sandboxstart', () => {
     currentMode = 'SANDBOX';
     gameStarted = true;
 
+    modeSystem.active = false;
+    modeSystem.mode = null;
+    modeSystem.paused = false;
+
     secondMain.started = true;
     secondMain.paused = false;
 
@@ -266,6 +284,11 @@ window.addEventListener('referencecg:sandboxexit', () => {
     gameStarted = false;
     secondMain.started = false;
 
+    modeSystem.active = false;
+    modeSystem.paused = false;
+    modeSystem.mode = null;
+    modeSystem.hud.style.display = 'none';
+
     mobileControls.sprinting = false;
 
     console.log('SANDBOX MODE CLOSED');
@@ -273,6 +296,19 @@ window.addEventListener('referencecg:sandboxexit', () => {
 
 window.addEventListener('referencecg:modechange', event => {
     currentMode = event.detail.mode;
+
+    if (currentMode === 'SANDBOX') {
+        modeSystem.active = false;
+        modeSystem.mode = null;
+        modeSystem.paused = false;
+        modeSystem.hud.style.display = 'none';
+    } else {
+        modeSystem.startMode(currentMode);
+    }
+
+    gameStarted = true;
+    secondMain.started = true;
+    secondMain.paused = false;
 
     console.log('SELECTED MODE:', currentMode);
 });
@@ -370,6 +406,8 @@ function animate() {
 
         if (currentMode === 'SANDBOX') {
             referenceCG.update(delta);
+        } else {
+            modeSystem.update(delta);
         }
 
         secondMain.update(delta, clock.elapsedTime);
@@ -381,12 +419,19 @@ function animate() {
 animate();
 
 // ======================================
+// CLEANUP
+// ======================================
+
+window.addEventListener('pagehide', () => {
+    modeSystem.destroy();
+}, { once: true });
+
+// ======================================
 // RESIZE
 // ======================================
 
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
-
     camera.updateProjectionMatrix();
 
     renderer.setSize(
@@ -403,4 +448,5 @@ document.getElementById('loading').style.display = 'none';
 
 console.log('PROJECT ZERO INITIALIZED');
 console.log('REFERENCE CG CONNECTED');
+console.log('MODE SYSTEM CONNECTED');
 console.log('SANDBOX SYSTEM READY');
