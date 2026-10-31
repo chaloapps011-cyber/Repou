@@ -15,6 +15,7 @@ import { ShootingSystem } from './shooting.js';
 import { AudioSystem } from './audio.js';
 import { ObjectiveSystem } from './objectives.js';
 import { WaveSystem } from './waves.js';
+import { SecondMain } from './Secondmain.js';
 
 // CONFIGURATION
 const CONFIG = {
@@ -56,13 +57,20 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 container.appendChild(renderer.domElement);
 
 // LIGHTING
-const ambient = new THREE.HemisphereLight(0xc5d5df, 0x353b32, 2);
+const ambient = new THREE.HemisphereLight(
+    0xc5d5df,
+    0x353b32,
+    2
+);
+
 scene.add(ambient);
 
 const sun = new THREE.DirectionalLight(0xffe2bd, 3);
+
 sun.position.set(-30, 50, 20);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
+
 scene.add(sun);
 
 // GROUND
@@ -76,6 +84,7 @@ const ground = new THREE.Mesh(
 
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
+
 scene.add(ground);
 
 // ROAD
@@ -89,15 +98,22 @@ const road = new THREE.Mesh(
 
 road.rotation.x = -Math.PI / 2;
 road.position.y = 0.02;
+
 scene.add(road);
 
 // COLLISION
 const collision = new CollisionSystem();
+
 createWorld(scene, collision);
 
 // PLAYER
 const mobileControls = new MobileControls();
-const player = new Player(camera, collision, mobileControls);
+
+const player = new Player(
+    camera,
+    collision,
+    mobileControls
+);
 
 // WEAPON
 const weapon = new Weapon(camera, scene);
@@ -109,26 +125,50 @@ const enemies = new EnemySystem(scene, collision);
 const health = new HealthSystem(100);
 
 // AI
-const ai = new EnemyAI(enemies, player, health, collision);
+const ai = new EnemyAI(
+    enemies,
+    player,
+    health,
+    collision
+);
 
 // AMMO
 const ammo = new AmmoSystem();
 
 // SHOOTING
-const shooting = new ShootingSystem(camera, weapon, ammo, enemies);
+const shooting = new ShootingSystem(
+    camera,
+    weapon,
+    ammo,
+    enemies
+);
 
 // AUDIO
 const audio = new AudioSystem();
 
 // OBJECTIVES
 const objectives = new ObjectiveSystem();
+
 objectives.complete(1);
 
 // WAVES
 const waves = new WaveSystem(enemies);
 
+// SECOND MAIN
+const secondMain = new SecondMain({
+    scene,
+    camera,
+    renderer,
+    player,
+    enemies,
+    health,
+    waves
+});
+
 // ACTIONS
 function fire() {
+    if (!secondMain.started) return;
+    if (secondMain.paused || secondMain.finished) return;
     if (!health.alive) return;
     if (ammo.magazine <= 0 || ammo.reloading) return;
 
@@ -137,6 +177,8 @@ function fire() {
 }
 
 function reload() {
+    if (!secondMain.started) return;
+    if (secondMain.paused || secondMain.finished) return;
     if (!health.alive) return;
     if (ammo.reloading || ammo.magazine >= ammo.magazineSize) return;
 
@@ -144,7 +186,7 @@ function reload() {
     audio.reload();
 }
 
-// MOBILE BUTTONS
+// MOBILE FIRE
 const fireButton = document.querySelector('.action-button');
 const sprintButton = document.querySelector('.sprint-button');
 
@@ -155,9 +197,12 @@ if (fireButton) {
     });
 }
 
+// MOBILE SPRINT
 if (sprintButton) {
     sprintButton.addEventListener('pointerdown', () => {
-        mobileControls.sprinting = true;
+        if (secondMain.started && !secondMain.paused) {
+            mobileControls.sprinting = true;
+        }
     });
 
     const stopSprint = () => {
@@ -188,11 +233,27 @@ function animate() {
 
     const delta = Math.min(clock.getDelta(), 0.05);
 
-    if (health.alive) {
-        player.update(delta);
-        ai.update(delta);
-        waves.update(delta);
-        objectives.checkEnemies(enemies);
+    if (
+        secondMain.started &&
+        !secondMain.paused &&
+        !secondMain.finished
+    ) {
+        if (health.alive) {
+            player.update(delta);
+            ai.update(delta);
+            waves.update(delta);
+
+            objectives.checkEnemies(enemies);
+        }
+
+        // PROGRESSIVE DIFFICULTY
+        const difficulty = secondMain.updateWaveBalance();
+
+        ai.moveSpeed = difficulty.enemySpeed;
+        ai.attackDamage = difficulty.enemyDamage;
+
+        // SECOND MAIN SYSTEMS
+        secondMain.update(delta, clock.elapsedTime);
     }
 
     renderer.render(scene, camera);
@@ -204,10 +265,15 @@ animate();
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    renderer.setSize(
+        window.innerWidth,
+        window.innerHeight
+    );
 });
 
 // INITIALIZATION
 document.getElementById('loading').style.display = 'none';
 
 console.log('PROJECT ZERO INITIALIZED');
+console.log('SECOND MAIN CONNECTED');
