@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // MODULES
 // ======================================
 
-import { createWorld } from './world.js';
+import { createWorld } from './World.js';
 import { CollisionSystem } from './collision.js';
 import { Player } from './player.js';
 import { MobileControls } from './mobile-controls.js';
