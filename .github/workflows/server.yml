@@ -19,8 +19,11 @@ jobs:
         with:
           node-version: 22
 
+      - name: Check package.json
+        run: node -e "console.log(require('./package.json'))"
+
       - name: Install dependencies
-        run: npm install
+        run: npm install --verbose
 
       - name: Check server syntax
         run: node --check server.js
