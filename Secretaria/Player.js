@@ -2,9 +2,10 @@
 import * as THREE from 'three';
 
 export class Player {
-    constructor(camera, collision) {
+    constructor(camera, collision, mobileControls) {
         this.camera = camera;
         this.collision = collision;
+        this.mobile = mobileControls;
 
         this.position = new THREE.Vector3(0, 1.7, 12);
 
@@ -16,12 +17,13 @@ export class Player {
         this.yaw = 0;
         this.pitch = 0;
 
-        this.velocity = new THREE.Vector3();
+        this.camera.rotation.order = 'YXZ';
 
-        this.setupControls();
+        this.setupKeyboard();
+        this.setupMouseLook();
     }
 
-    setupControls() {
+    setupKeyboard() {
         window.addEventListener('keydown', e => {
             this.keys[e.code] = true;
         });
@@ -29,14 +31,12 @@ export class Player {
         window.addEventListener('keyup', e => {
             this.keys[e.code] = false;
         });
+    }
 
+    setupMouseLook() {
         let dragging = false;
         let lastX = 0;
         let lastY = 0;
-
-        this.camera.rotation.order = 'YXZ';
-
-        this.camera.parent?.addEventListener?.('pointermove', () => {});
 
         window.addEventListener('pointerdown', e => {
             if (e.target.tagName !== 'CANVAS') return;
@@ -56,21 +56,31 @@ export class Player {
             this.yaw -= (e.clientX - lastX) * this.sensitivity;
             this.pitch -= (e.clientY - lastY) * this.sensitivity;
 
-            this.pitch = THREE.MathUtils.clamp(
-                this.pitch,
-                -1.4,
-                1.4
-            );
-
             lastX = e.clientX;
             lastY = e.clientY;
 
-            this.camera.rotation.set(this.pitch, this.yaw, 0);
+            this.updateRotation();
         });
     }
 
+    updateRotation() {
+        this.pitch = THREE.MathUtils.clamp(
+            this.pitch,
+            -1.4,
+            1.4
+        );
+
+        this.camera.rotation.set(
+            this.pitch,
+            this.yaw,
+            0
+        );
+    }
+
     update(delta) {
-        const direction = new THREE.Vector3();
+        const input = new THREE.Vector3();
+
+        const mobileMove = this.mobile.getMove();
 
         const forward = new THREE.Vector3(
             -Math.sin(this.yaw),
@@ -84,40 +94,46 @@ export class Player {
             -Math.sin(this.yaw)
         );
 
-        if (this.keys.KeyW || this.keys.ArrowUp) {
-            direction.add(forward);
-        }
+        // TECLADO
+        if (this.keys.KeyW || this.keys.ArrowUp) input.add(forward);
+        if (this.keys.KeyS || this.keys.ArrowDown) input.sub(forward);
+        if (this.keys.KeyD || this.keys.ArrowRight) input.add(right);
+        if (this.keys.KeyA || this.keys.ArrowLeft) input.sub(right);
 
-        if (this.keys.KeyS || this.keys.ArrowDown) {
-            direction.sub(forward);
-        }
+        // JOYSTICK
+        input.addScaledVector(forward, -mobileMove.y);
+        input.addScaledVector(right, mobileMove.x);
 
-        if (this.keys.KeyD || this.keys.ArrowRight) {
-            direction.add(right);
-        }
+        if (input.lengthSq() > 1) input.normalize();
 
-        if (this.keys.KeyA || this.keys.ArrowLeft) {
-            direction.sub(right);
-        }
+        const sprint =
+            this.keys.ShiftLeft || this.mobile.sprinting;
 
-        if (direction.lengthSq() > 0) {
-            direction.normalize();
-        }
-
-        const sprint = this.keys.ShiftLeft;
-        const currentSpeed = sprint ? this.sprintSpeed : this.speed;
+        const speed = sprint
+            ? this.sprintSpeed
+            : this.speed;
 
         const oldPosition = this.position.clone();
 
         const nextPosition = this.position.clone().addScaledVector(
-            direction,
-            currentSpeed * delta
+            input,
+            speed * delta
         );
 
         this.position.copy(
             this.collision.resolve(oldPosition, nextPosition)
         );
 
+        // CÂMERA
         this.camera.position.copy(this.position);
+
+        // VISÃO TOUCHSCREEN
+        this.yaw -= this.mobile.lookX * this.sensitivity;
+        this.pitch -= this.mobile.lookY * this.sensitivity;
+
+        this.mobile.lookX = 0;
+        this.mobile.lookY = 0;
+
+        this.updateRotation();
     }
 }
