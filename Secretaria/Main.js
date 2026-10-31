@@ -5,7 +5,7 @@ import * as THREE from 'three';
 // ======================================
 
 import { createWorld } from './World.js';
-import { CollisionSystem } from './Collision.js';
+import { CollisionSystem } from './Collsion.js';
 import { Player } from './Player.js';
 import { MobileControls } from './Mobile-controls.js';
 import { Weapon } from './Weapon.js';
