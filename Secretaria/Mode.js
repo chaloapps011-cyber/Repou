@@ -1,24 +1,5 @@
-
 import * as THREE from 'three';
-
-/*
- PROJECT: ZERO
- MODE SYSTEM
- File: src/Mode.js
-
- Includes:
- - Sandbox
- - Object editor
- - Basic physics
- - Vehicles
- - Game modes
- - Teams
- - Objectives
- - Match timer
- - Survival waves
- - Training
- - Future multiplayer adapter
-*/
+import { io } from 'socket.io-client';
 
 export default class Mode {
     constructor({
@@ -74,8 +55,12 @@ export default class Mode {
 
         this.network = {
             connected: false,
+            serverReady: false,
             socket: null,
             room: null,
+            roomInfo: null,
+            serverInfo: null,
+            playerName: 'Player',
             players: new Map()
         };
 
@@ -83,10 +68,6 @@ export default class Mode {
         this.createInterface();
         this.bindEvents();
     }
-
-    // -----------------------------
-    // INTERFACE
-    // -----------------------------
 
     createInterface() {
         this.style = document.createElement('style');
@@ -99,9 +80,7 @@ export default class Mode {
             color:white;
             font-family:Arial,sans-serif;
         }
-
         #pz-mode-root * { box-sizing:border-box; }
-
         .pz-panel {
             background:rgba(8,11,18,.94);
             border:1px solid #343b4c;
@@ -109,7 +88,6 @@ export default class Mode {
             padding:12px;
             pointer-events:auto;
         }
-
         #pz-mode-menu {
             position:absolute;
             inset:0;
@@ -120,7 +98,6 @@ export default class Mode {
             pointer-events:auto;
             overflow:auto;
         }
-
         .pz-menu-content {
             width:min(94%,620px);
             max-height:92%;
@@ -130,26 +107,22 @@ export default class Mode {
             border:1px solid #39445c;
             border-radius:14px;
         }
-
         .pz-title {
             font-size:25px;
             font-weight:900;
             letter-spacing:3px;
             margin-bottom:5px;
         }
-
         .pz-subtitle {
             color:#8c9bb5;
             font-size:12px;
             margin-bottom:16px;
         }
-
         .pz-mode-grid {
             display:grid;
             grid-template-columns:repeat(2,minmax(0,1fr));
             gap:9px;
         }
-
         .pz-button {
             padding:13px 8px;
             background:#1c2638;
@@ -160,25 +133,18 @@ export default class Mode {
             cursor:pointer;
             min-height:43px;
         }
-
         .pz-button:active { background:#394d70; }
-
         .pz-button.primary {
             background:#a32335;
             border-color:#e44a5e;
         }
-
-        .pz-button.danger {
-            background:#66212a;
-        }
-
+        .pz-button.danger { background:#66212a; }
         #pz-sandbox-ui {
             display:none;
             position:absolute;
             inset:0;
             pointer-events:none;
         }
-
         #pz-top-menu {
             position:absolute;
             top:8px;
@@ -194,7 +160,6 @@ export default class Mode {
             border-radius:9px;
             pointer-events:auto;
         }
-
         #pz-catalog {
             position:absolute;
             left:8px;
@@ -207,7 +172,6 @@ export default class Mode {
             padding:8px;
             pointer-events:auto;
         }
-
         #pz-properties {
             position:absolute;
             right:8px;
@@ -220,7 +184,6 @@ export default class Mode {
             padding:8px;
             pointer-events:auto;
         }
-
         .pz-small {
             width:100%;
             margin:3px 0;
@@ -231,7 +194,6 @@ export default class Mode {
             border-radius:6px;
             font-size:12px;
         }
-
         .pz-field {
             width:100%;
             margin:3px 0 8px;
@@ -241,14 +203,12 @@ export default class Mode {
             border:1px solid #76b79b;
             border-radius:5px;
         }
-
         .pz-label {
             display:block;
             font-size:11px;
             margin-top:8px;
             color:#e3f5e9;
         }
-
         #pz-hud {
             position:absolute;
             top:10px;
@@ -259,12 +219,10 @@ export default class Mode {
             font-size:12px;
             pointer-events:none;
         }
-
         #pz-mode-root button,
         #pz-mode-root input {
             font:inherit;
         }
-
         @media(max-width:500px) {
             .pz-title {font-size:20px}
             .pz-mode-grid {grid-template-columns:1fr 1fr}
@@ -290,7 +248,6 @@ export default class Mode {
                 </button>
             </div>
         </div>
-
         <div id="pz-sandbox-ui">
             <div id="pz-top-menu">
                 <button class="pz-button" data-action="save">SALVAR</button>
@@ -299,12 +256,10 @@ export default class Mode {
                 <button class="pz-button" data-action="delete">EXCLUIR</button>
                 <button class="pz-button" data-action="exit">SAIR</button>
             </div>
-
             <div id="pz-catalog">
                 <b>CATÁLOGO</b>
                 <div id="pz-catalog-list"></div>
             </div>
-
             <div id="pz-properties">
                 <b>PROPRIEDADES</b>
                 <div id="pz-property-content">
@@ -312,7 +267,6 @@ export default class Mode {
                 </div>
             </div>
         </div>
-
         <div id="pz-hud" style="display:none"></div>
         `;
 
@@ -345,11 +299,9 @@ export default class Mode {
             const button = document.createElement('button');
             button.className = 'pz-button';
             button.innerHTML = `<b>${name}</b><br><small>${description}</small>`;
-
             button.addEventListener('click', () => {
                 this.startMode(name);
             });
-
             this.grid.appendChild(button);
         }
 
@@ -386,21 +338,12 @@ export default class Mode {
         }
     }
 
-    // -----------------------------
-    // EVENTS
-    // -----------------------------
-
     bindEvents() {
         this.onKeyDown = event => {
             this.keys[event.code] = true;
 
-            if (event.code === 'Escape') {
-                this.toggleMenu();
-            }
-
-            if (event.code === 'Delete') {
-                this.deleteSelected();
-            }
+            if (event.code === 'Escape') this.toggleMenu();
+            if (event.code === 'Delete') this.deleteSelected();
 
             if (event.code === 'KeyD' && event.shiftKey) {
                 this.duplicateSelected();
@@ -413,9 +356,7 @@ export default class Mode {
 
         this.onPointerDown = event => {
             if (!this.active || this.mode !== 'SANDBOX') return;
-
             if (event.target.closest('#pz-mode-root')) return;
-
             this.selectObject(event);
         };
 
@@ -429,10 +370,7 @@ export default class Mode {
             if (action === 'load') this.loadBuild();
             if (action === 'duplicate') this.duplicateSelected();
             if (action === 'delete') this.deleteSelected();
-
-            if (action === 'exit') {
-                this.exitMode();
-            }
+            if (action === 'exit') this.exitMode();
         };
 
         window.addEventListener('keydown', this.onKeyDown);
@@ -449,13 +387,10 @@ export default class Mode {
 
     toggleMenu() {
         if (this.mode === 'SANDBOX') return;
+
         this.menu.style.display =
             this.menu.style.display === 'none' ? 'flex' : 'none';
     }
-
-    // -----------------------------
-    // MODES
-    // -----------------------------
 
     startMode(name) {
         if (this.destroyed) return;
@@ -481,7 +416,6 @@ export default class Mode {
         const sandbox = name === 'SANDBOX';
         this.sandboxUI.style.display = sandbox ? 'block' : 'none';
         this.hud.style.display = sandbox ? 'none' : 'block';
-
         this.hud.textContent = name;
 
         if (name !== 'SANDBOX') {
@@ -540,10 +474,6 @@ export default class Mode {
         this.paused = false;
     }
 
-    // -----------------------------
-    // SANDBOX OBJECTS
-    // -----------------------------
-
     spawnObject(type) {
         const object = this.createObject(type);
         if (!object) return;
@@ -588,6 +518,7 @@ export default class Mode {
         if (type === 'BLOCK') return box(1, 1, 1, 0x778899);
         if (type === 'WALL') return box(4, 3, .35, 0x68717c);
         if (type === 'FLOOR') return box(4, .2, 4, 0x555d66);
+
         if (type === 'BARREL') {
             return new THREE.Mesh(
                 new THREE.CylinderGeometry(.5, .5, 1.2, 16),
@@ -601,10 +532,12 @@ export default class Mode {
 
         if (type === 'LAMP') {
             const group = new THREE.Group();
+
             const pole = new THREE.Mesh(
                 new THREE.CylinderGeometry(.06, .08, 3),
                 material(0x333333)
             );
+
             pole.position.y = 1.5;
 
             const light = new THREE.PointLight(0xffdf9a, 5, 12);
@@ -614,9 +547,10 @@ export default class Mode {
                 new THREE.SphereGeometry(.2, 12, 12),
                 material(0xffdf9a)
             );
-            bulb.position.y = 3;
 
+            bulb.position.y = 3;
             group.add(pole, light, bulb);
+
             return group;
         }
 
@@ -625,6 +559,7 @@ export default class Mode {
 
             const frame = box(1.6, 2.8, .2, 0x443a31);
             const door = box(1.35, 2.6, .12, 0x865d3c);
+
             door.position.z = .12;
             door.userData.isDoor = true;
 
@@ -632,11 +567,13 @@ export default class Mode {
                 new THREE.SphereGeometry(.06),
                 material(0xd7b34c)
             );
+
             handle.position.set(.5, 0, .22);
 
             group.add(frame, door, handle);
             group.userData.door = door;
             group.userData.open = false;
+
             group.userData.toggleDoor = () => {
                 group.userData.open = !group.userData.open;
                 door.rotation.y = group.userData.open ? -1.5 : 0;
@@ -664,12 +601,14 @@ export default class Mode {
                 new THREE.BoxGeometry(.65, 1.2, .35),
                 material(type === 'ENEMY' ? 0x8e3030 : 0x339c73)
             );
+
             body.position.y = .9;
 
             const head = new THREE.Mesh(
                 new THREE.SphereGeometry(.25, 12, 12),
                 material(0xb58d70)
             );
+
             head.position.y = 1.65;
 
             group.add(body, head);
@@ -689,6 +628,7 @@ export default class Mode {
                 truck ? 4 : 3,
                 truck ? 0x9b3636 : 0x3470a6
             );
+
             chassis.position.y = .8;
 
             const cabin = box(
@@ -697,8 +637,8 @@ export default class Mode {
                 truck ? 1.5 : 1.3,
                 0x252e3a
             );
-            cabin.position.set(0, 1.4, -.2);
 
+            cabin.position.set(0, 1.4, -.2);
             group.add(chassis, cabin);
 
             const wheels = [];
@@ -728,10 +668,6 @@ export default class Mode {
 
         return null;
     }
-
-    // -----------------------------
-    // SELECTION AND PROPERTIES
-    // -----------------------------
 
     selectObject(event) {
         const rect = this.renderer.domElement.getBoundingClientRect();
@@ -790,23 +726,17 @@ export default class Mode {
 
         this.properties.innerHTML = `
             <b>${object.userData.pzType || 'OBJECT'}</b>
-
             ${field('Posição X','x',object.position.x)}
             ${field('Posição Y','y',object.position.y)}
             ${field('Posição Z','z',object.position.z)}
-
             ${field('Escala','scale',object.scale.x)}
-
             ${field('Rotação Y','rotation',object.rotation.y)}
-
             <button class="pz-small" data-property="freeze">
                 ${object.userData.dynamic ? 'DESATIVAR FÍSICA' : 'ATIVAR FÍSICA'}
             </button>
-
             <button class="pz-small" data-property="duplicate">
                 DUPLICAR OBJETO
             </button>
-
             <button class="pz-small" data-property="delete">
                 EXCLUIR OBJETO
             </button>
@@ -865,8 +795,8 @@ export default class Mode {
         if (!this.selected) return;
 
         const clone = this.selected.clone(true);
-
         clone.position.x += 1;
+
         clone.userData = {
             ...this.selected.userData,
             velocity: new THREE.Vector3(),
@@ -890,19 +820,16 @@ export default class Mode {
         const object = this.selected;
 
         this.scene.remove(object);
-
         this.objects = this.objects.filter(item => item !== object);
+
         this.physicsObjects = this.physicsObjects.filter(
             item => item !== object
         );
+
         this.vehicles = this.vehicles.filter(item => item !== object);
 
         this.select(null);
     }
-
-    // -----------------------------
-    // BASIC PHYSICS
-    // -----------------------------
 
     updatePhysics(delta) {
         const dt = Math.min(delta, .05);
@@ -911,7 +838,6 @@ export default class Mode {
             if (!object.userData.dynamic) continue;
 
             const velocity = object.userData.velocity;
-
             if (!velocity) continue;
 
             velocity.y -= this.gravity * dt;
@@ -934,7 +860,6 @@ export default class Mode {
     resolveObjectStacking() {
         for (let i = 0; i < this.physicsObjects.length; i++) {
             const a = this.physicsObjects[i];
-
             if (!a.userData.dynamic) continue;
 
             const boundsA = new THREE.Box3().setFromObject(a);
@@ -970,7 +895,6 @@ export default class Mode {
                         boundsB.max.y - boundsA.min.y;
 
                     a.position.y += correction;
-
                     aVelocity.y = 0;
                     a.userData.grounded = true;
 
@@ -979,10 +903,6 @@ export default class Mode {
             }
         }
     }
-
-    // -----------------------------
-    // VEHICLES
-    // -----------------------------
 
     updateVehicles(delta) {
         const dt = Math.min(delta, .05);
@@ -1024,10 +944,6 @@ export default class Mode {
             }
         }
     }
-
-    // -----------------------------
-    // GAMEPLAY SYSTEMS
-    // -----------------------------
 
     addKill(team = 'blue') {
         this.match.kills++;
@@ -1111,10 +1027,6 @@ export default class Mode {
         };
     }
 
-    // -----------------------------
-    // BUILD SAVE / LOAD
-    // -----------------------------
-
     saveBuild() {
         const data = this.objects.map(object => ({
             type: object.userData.pzType,
@@ -1179,11 +1091,13 @@ export default class Mode {
         this.objects = [];
         this.physicsObjects = [];
         this.vehicles = [];
+
         this.select(null);
     }
 
     showMessage(message) {
         const previous = this.hud.textContent;
+
         this.hud.style.display = 'block';
         this.hud.textContent = message;
 
@@ -1194,113 +1108,306 @@ export default class Mode {
         }, 1800);
     }
 
-    // -----------------------------
-    // FUTURE MULTIPLAYER
-    // -----------------------------
+    async connectServer(url, playerName = 'Player') {
+        this.disconnectServer();
 
-    async connectServer(url, room = 'PUBLIC') {
-        if (this.network.socket) {
-            this.network.socket.close();
+        if (!url || typeof url !== 'string') {
+            throw new Error('URL do servidor inválida.');
         }
 
         return new Promise((resolve, reject) => {
-            try {
-                const socket = new WebSocket(url);
+            const socket = io(url, {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 5,
+                timeout: 10000
+            });
 
-                this.network.socket = socket;
-                this.network.room = room;
+            this.network.socket = socket;
+            this.network.playerName = String(playerName).slice(0, 20);
 
-                socket.onopen = () => {
-                    this.network.connected = true;
+            let settled = false;
 
-                    socket.send(JSON.stringify({
-                        type: 'JOIN_ROOM',
-                        room
-                    }));
+            const connectionTimeout = setTimeout(() => {
+                if (settled) return;
 
+                settled = true;
+                socket.disconnect();
+                reject(new Error('Tempo limite de conexão excedido.'));
+            }, 12000);
+
+            socket.on('connect', () => {
+                this.network.connected = true;
+
+                if (!settled) {
+                    settled = true;
+                    clearTimeout(connectionTimeout);
                     resolve(true);
-                };
+                }
 
-                socket.onmessage = event => {
-                    this.handleNetworkMessage(event.data);
-                };
+                this.dispatchNetworkEvent('connected', {
+                    id: socket.id
+                });
+            });
 
-                socket.onerror = () => {
-                    this.network.connected = false;
-                    reject(new Error('Falha na conexão com o servidor.'));
-                };
+            socket.on('server:ready', data => {
+                this.network.serverReady = true;
+                this.network.serverInfo = data;
 
-                socket.onclose = () => {
-                    this.network.connected = false;
-                };
-            } catch (error) {
-                reject(error);
-            }
+                this.dispatchNetworkEvent('server:ready', data);
+            });
+
+            socket.on('connect_error', error => {
+                this.network.connected = false;
+
+                if (!settled) {
+                    settled = true;
+                    clearTimeout(connectionTimeout);
+                    reject(error);
+                }
+
+                this.dispatchNetworkEvent('error', {
+                    message: error.message
+                });
+            });
+
+            socket.on('disconnect', reason => {
+                this.network.connected = false;
+                this.network.serverReady = false;
+                this.network.room = null;
+                this.network.roomInfo = null;
+                this.network.players.clear();
+
+                this.dispatchNetworkEvent('disconnected', {
+                    reason
+                });
+            });
+
+            socket.on('room:joined', data => {
+                this.network.room = data.id;
+                this.network.roomInfo = data;
+
+                this.network.players.clear();
+
+                for (const player of data.players || []) {
+                    this.network.players.set(player.id, player);
+                }
+
+                this.dispatchNetworkEvent('room:joined', data);
+            });
+
+            socket.on('room:update', data => {
+                this.network.roomInfo = data;
+
+                this.network.players.clear();
+
+                for (const player of data.players || []) {
+                    this.network.players.set(player.id, player);
+                }
+
+                this.dispatchNetworkEvent('room:update', data);
+            });
+
+            socket.on('player:joined', player => {
+                this.network.players.set(player.id, player);
+                this.dispatchNetworkEvent('player:joined', player);
+            });
+
+            socket.on('player:left', data => {
+                this.network.players.delete(data.id);
+                this.dispatchNetworkEvent('player:left', data);
+            });
+
+            socket.on('player:moved', data => {
+                const player = this.network.players.get(data.id);
+
+                if (player) {
+                    player.position = data.position;
+                    player.rotation = data.rotation;
+                }
+
+                this.dispatchNetworkEvent('player:moved', data);
+            });
+
+            socket.on('player:shot', data => {
+                this.dispatchNetworkEvent('player:shot', data);
+            });
+
+            socket.on('player:eliminated', data => {
+                this.dispatchNetworkEvent('player:eliminated', data);
+            });
+
+            socket.on('chat:message', data => {
+                this.dispatchNetworkEvent('chat:message', data);
+            });
         });
     }
 
-    handleNetworkMessage(raw) {
-        let message;
-
-        try {
-            message = JSON.parse(raw);
-        } catch {
-            return;
-        }
-
-        if (message.type === 'PLAYER_LIST') {
-            this.network.players.clear();
-
-            for (const player of message.players || []) {
-                this.network.players.set(player.id, player);
-            }
-        }
-
-        if (message.type === 'PLAYER_JOINED') {
-            this.network.players.set(message.player.id, message.player);
-        }
-
-        if (message.type === 'PLAYER_LEFT') {
-            this.network.players.delete(message.id);
-        }
-
-        if (message.type === 'MATCH_STATE') {
-            this.match = {
-                ...this.match,
-                ...message.state
-            };
-        }
+    dispatchNetworkEvent(name, detail = {}) {
+        window.dispatchEvent(new CustomEvent(
+            `projectzero:network:${name}`,
+            { detail }
+        ));
     }
 
-    sendNetwork(type, payload = {}) {
+    emitNetwork(event, data = {}) {
         const socket = this.network.socket;
 
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-            return false;
+        if (!socket || !socket.connected) return false;
+
+        socket.emit(event, data);
+        return true;
+    }
+
+    requestNetwork(event, data = {}) {
+        return new Promise((resolve, reject) => {
+            const socket = this.network.socket;
+
+            if (!socket || !socket.connected) {
+                reject(new Error('Não conectado ao servidor.'));
+                return;
+            }
+
+            socket.timeout(5000).emit(event, data, (error, response) => {
+                if (error) {
+                    reject(new Error('O servidor não respondeu.'));
+                    return;
+                }
+
+                if (response?.error) {
+                    reject(new Error(response.error));
+                    return;
+                }
+
+                resolve(response);
+            });
+        });
+    }
+
+    async listOnlineRooms() {
+        const socket = this.network.socket;
+
+        if (!socket || !socket.connected) {
+            throw new Error('Não conectado ao servidor.');
         }
 
-        socket.send(JSON.stringify({
-            type,
-            room: this.network.room,
-            payload
-        }));
+        return new Promise((resolve, reject) => {
+            socket.timeout(5000).emit('room:list', (error, rooms) => {
+                if (error) {
+                    reject(new Error('Falha ao buscar salas.'));
+                    return;
+                }
+
+                resolve(rooms || []);
+            });
+        });
+    }
+
+    async createOnlineRoom({
+        name = 'Nova sala',
+        private: isPrivate = false,
+        password = '',
+        playerName = this.network.playerName
+    } = {}) {
+        return this.requestNetwork('room:create', {
+            name,
+            private: isPrivate,
+            password,
+            playerName
+        });
+    }
+
+    async joinOnlineRoom(room, password = '') {
+        return this.requestNetwork('room:join', {
+            room,
+            password,
+            playerName: this.network.playerName
+        });
+    }
+
+    leaveOnlineRoom() {
+        if (!this.network.socket?.connected) return false;
+
+        this.network.socket.emit('room:leave');
+
+        this.network.room = null;
+        this.network.roomInfo = null;
+        this.network.players.clear();
 
         return true;
     }
 
-    disconnectServer() {
-        if (this.network.socket) {
-            this.network.socket.close();
-            this.network.socket = null;
-        }
-
-        this.network.connected = false;
-        this.network.players.clear();
+    sendPlayerPosition(position, rotation) {
+        return this.emitNetwork('player:move', {
+            position: {
+                x: Number(position.x),
+                y: Number(position.y),
+                z: Number(position.z)
+            },
+            rotation: {
+                x: Number(rotation.x || 0),
+                y: Number(rotation.y || 0),
+                z: Number(rotation.z || 0)
+            }
+        });
     }
 
-    // -----------------------------
-    // UPDATE
-    // -----------------------------
+    sendPlayerShot(origin, direction) {
+        return this.emitNetwork('player:shoot', {
+            origin,
+            direction
+        });
+    }
+
+    sendPlayerDamage(target, damage) {
+        return this.emitNetwork('player:damage', {
+            target,
+            damage: Math.max(0, Math.min(Number(damage) || 0, 40))
+        });
+    }
+
+    sendChatMessage(message) {
+        const text = String(message || '').trim().slice(0, 200);
+
+        if (!text) return false;
+
+        return this.emitNetwork('chat:send', text);
+    }
+
+    changeOnlineTeam(team) {
+        if (!['blue', 'red'].includes(team)) return false;
+
+        return this.emitNetwork('team:change', team);
+    }
+
+    changeOnlineMode(mode) {
+        return this.emitNetwork('mode:change', mode);
+    }
+
+    getOnlinePlayers() {
+        return [...this.network.players.values()];
+    }
+
+    getOnlineRoom() {
+        return this.network.roomInfo;
+    }
+
+    disconnectServer() {
+        const socket = this.network.socket;
+
+        if (socket) {
+            socket.removeAllListeners();
+            socket.disconnect();
+        }
+
+        this.network.socket = null;
+        this.network.connected = false;
+        this.network.serverReady = false;
+        this.network.serverInfo = null;
+        this.network.room = null;
+        this.network.roomInfo = null;
+        this.network.players.clear();
+    }
 
     update(delta) {
         if (!this.active || this.paused || this.destroyed) return;
@@ -1328,7 +1435,8 @@ export default class Mode {
         this.style?.remove();
 
         this.clearBuild();
+
         this.destroyed = true;
         this.active = false;
     }
-}
+         }
