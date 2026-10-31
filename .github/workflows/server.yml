@@ -19,14 +19,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check package.json
-        run: node -e "console.log(require('./package.json'))"
+      - name: Prepare package
+        run: cp Package.json package.json
 
       - name: Install dependencies
         run: npm install --verbose
 
       - name: Check server syntax
-        run: node --check server.js
-
-      - name: Build game
-        run: npm run build
+        run: node --check Secretaria/Server.js
