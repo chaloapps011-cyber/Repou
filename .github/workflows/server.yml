@@ -1,0 +1,29 @@
+
+name: PROJECT ZERO Server Check
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-server:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Check server syntax
+        run: node --check server.js
+
+      - name: Build game
+        run: npm run build
