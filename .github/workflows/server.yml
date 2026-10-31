@@ -1,5 +1,5 @@
 
-name: PROJECT ZERO Server Check
+name: PROJECT ZERO Build & Server Check
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-server:
+  test-project:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,7 +23,10 @@ jobs:
         run: cp Package.json package.json
 
       - name: Install dependencies
-        run: npm install --verbose
+        run: npm install
 
       - name: Check server syntax
         run: node --check Secretaria/Server.js
+
+      - name: Build PROJECT ZERO
+        run: npm run build
