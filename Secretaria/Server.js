@@ -1,8 +1,8 @@
 
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const crypto = require('crypto');
+import express from 'express';
+import http from 'node:http';
+import crypto from 'node:crypto';
+import { Server } from 'socket.io';
 
 const app = express();
 const server = http.createServer(app);
@@ -17,31 +17,41 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 const rooms = new Map();
 
+const MODES = [
+    'FREE MODE',
+    'TEAM FIGHT',
+    'ELITE SQUAD',
+    'TIME MODE',
+    'OBJECTIVE MODE',
+    'SURVIVAL',
+    'TRAINING'
+];
+
+app.use(express.json());
+
 app.get('/', (req, res) => {
     res.json({
-        name: 'PROJECT: ZERO SERVER',
-        status: 'online',
-        rooms: rooms.size
+        name: 'PROJECT: ZERO',
+        server: 'ONLINE',
+        rooms: rooms.size,
+        version: '1.0.0'
     });
 });
 
-function createRoom(name, privateRoom = false) {
+function createRoom(data) {
     const id = crypto.randomBytes(4).toString('hex');
 
     const room = {
         id,
-        name,
-        private: privateRoom,
-        players: new Map(),
+        name: String(data.name || 'Nova sala').slice(0, 30),
+        private: Boolean(data.private),
+        password: data.private ? String(data.password || '') : null,
         mode: 'FREE MODE',
-        createdAt: Date.now(),
+        players: new Map(),
         state: {
             started: false,
-            time: 0,
-            score: {
-                blue: 0,
-                red: 0
-            }
+            score: { blue: 0, red: 0 },
+            time: 0
         }
     };
 
@@ -49,7 +59,7 @@ function createRoom(name, privateRoom = false) {
     return room;
 }
 
-function getPlayerRoom(socket) {
+function findRoom(socket) {
     for (const room of rooms.values()) {
         if (room.players.has(socket.id)) return room;
     }
@@ -57,7 +67,7 @@ function getPlayerRoom(socket) {
     return null;
 }
 
-function publicPlayer(player) {
+function playerData(player) {
     return {
         id: player.id,
         name: player.name,
@@ -70,25 +80,71 @@ function publicPlayer(player) {
     };
 }
 
-function broadcastRoom(room) {
+function broadcast(room) {
     io.to(room.id).emit('room:update', {
         id: room.id,
         name: room.name,
         mode: room.mode,
-        players: [...room.players.values()].map(publicPlayer),
-        state: room.state
+        state: room.state,
+        players: [...room.players.values()].map(playerData)
     });
 }
 
+function leaveRoom(socket) {
+    const room = findRoom(socket);
+    if (!room) return;
+
+    room.players.delete(socket.id);
+    socket.leave(room.id);
+
+    io.to(room.id).emit('player:left', {
+        id: socket.id
+    });
+
+    if (room.players.size === 0) {
+        rooms.delete(room.id);
+    } else {
+        broadcast(room);
+    }
+}
+
+function joinRoom(socket, room, name) {
+    const player = {
+        id: socket.id,
+        name: String(name || 'Player').slice(0, 20),
+        team: room.players.size % 2 === 0 ? 'blue' : 'red',
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        health: 100,
+        kills: 0,
+        deaths: 0
+    };
+
+    room.players.set(socket.id, player);
+    socket.join(room.id);
+
+    socket.emit('room:joined', {
+        id: room.id,
+        name: room.name,
+        mode: room.mode,
+        players: [...room.players.values()].map(playerData)
+    });
+
+    socket.to(room.id).emit('player:joined', playerData(player));
+    broadcast(room);
+}
+
 io.on('connection', socket => {
-    console.log('Conectado:', socket.id);
+    console.log('Player conectado:', socket.id);
 
     socket.emit('server:ready', {
         message: 'PROJECT ZERO SERVER READY'
     });
 
     socket.on('room:list', callback => {
-        const list = [...rooms.values()]
+        if (typeof callback !== 'function') return;
+
+        callback([...rooms.values()]
             .filter(room => !room.private)
             .map(room => ({
                 id: room.id,
@@ -96,112 +152,75 @@ io.on('connection', socket => {
                 mode: room.mode,
                 players: room.players.size,
                 started: room.state.started
-            }));
-
-        if (typeof callback === 'function') callback(list);
+            }))
+        );
     });
 
     socket.on('room:create', (data = {}, callback) => {
-        if (getPlayerRoom(socket)) {
-            if (typeof callback === 'function') {
-                callback({ error: 'Você já está em uma sala.' });
-            }
+        if (findRoom(socket)) {
+            callback?.({ error: 'Você já está em uma sala.' });
             return;
         }
 
-        const name = String(data.name || 'Nova sala').slice(0, 30);
-        const room = createRoom(name, Boolean(data.private));
+        if (data.private && !data.password) {
+            callback?.({ error: 'Defina uma senha para a sala.' });
+            return;
+        }
 
+        const room = createRoom(data);
         joinRoom(socket, room, data.playerName);
 
-        if (typeof callback === 'function') {
-            callback({ success: true, room: room.id });
-        }
+        callback?.({
+            success: true,
+            room: room.id
+        });
     });
 
     socket.on('room:join', (data = {}, callback) => {
+        if (findRoom(socket)) {
+            callback?.({ error: 'Você já está em uma sala.' });
+            return;
+        }
+
         const room = rooms.get(String(data.room));
 
         if (!room) {
-            if (typeof callback === 'function') {
-                callback({ error: 'Sala não encontrada.' });
-            }
+            callback?.({ error: 'Sala não encontrada.' });
             return;
         }
 
         if (room.private && data.password !== room.password) {
-            if (typeof callback === 'function') {
-                callback({ error: 'Senha incorreta.' });
-            }
+            callback?.({ error: 'Senha incorreta.' });
             return;
         }
 
         if (room.players.size >= 16) {
-            if (typeof callback === 'function') {
-                callback({ error: 'Sala cheia.' });
-            }
-            return;
-        }
-
-        if (getPlayerRoom(socket)) {
-            if (typeof callback === 'function') {
-                callback({ error: 'Você já está em uma sala.' });
-            }
+            callback?.({ error: 'Sala cheia.' });
             return;
         }
 
         joinRoom(socket, room, data.playerName);
 
-        if (typeof callback === 'function') {
-            callback({ success: true, room: room.id });
-        }
+        callback?.({
+            success: true,
+            room: room.id
+        });
     });
 
-    function joinRoom(socket, room, playerName) {
-        const player = {
-            id: socket.id,
-            name: String(playerName || 'Player').slice(0, 20),
-            team: room.players.size % 2 === 0 ? 'blue' : 'red',
-            position: { x: 0, y: 0, z: 0 },
-            rotation: { x: 0, y: 0, z: 0 },
-            health: 100,
-            kills: 0,
-            deaths: 0
-        };
-
-        room.players.set(socket.id, player);
-        socket.join(room.id);
-
-        socket.emit('room:joined', {
-            id: room.id,
-            name: room.name,
-            mode: room.mode,
-            players: [...room.players.values()].map(publicPlayer)
-        });
-
-        socket.to(room.id).emit('player:joined', publicPlayer(player));
-
-        broadcastRoom(room);
-    }
-
     socket.on('player:move', data => {
-        const room = getPlayerRoom(socket);
-        if (!room) return;
+        const room = findRoom(socket);
+        if (!room || !data?.position || !data?.rotation) return;
+
+        const values = [
+            data.position.x,
+            data.position.y,
+            data.position.z,
+            data.rotation.y
+        ];
+
+        if (!values.every(Number.isFinite)) return;
 
         const player = room.players.get(socket.id);
-
-        const valid = value =>
-            typeof value === 'number' && Number.isFinite(value);
-
-        if (
-            !data ||
-            !data.position ||
-            !data.rotation ||
-            !valid(data.position.x) ||
-            !valid(data.position.y) ||
-            !valid(data.position.z) ||
-            !valid(data.rotation.y)
-        ) return;
 
         const clamp = (value, min, max) =>
             Math.max(min, Math.min(max, value));
@@ -212,11 +231,7 @@ io.on('connection', socket => {
             z: clamp(data.position.z, -500, 500)
         };
 
-        player.rotation = {
-            x: 0,
-            y: clamp(data.rotation.y, -1000, 1000),
-            z: 0
-        };
+        player.rotation.y = clamp(data.rotation.y, -1000, 1000);
 
         socket.to(room.id).emit('player:moved', {
             id: socket.id,
@@ -226,7 +241,7 @@ io.on('connection', socket => {
     });
 
     socket.on('player:shoot', data => {
-        const room = getPlayerRoom(socket);
+        const room = findRoom(socket);
         if (!room || !data) return;
 
         socket.to(room.id).emit('player:shot', {
@@ -237,15 +252,14 @@ io.on('connection', socket => {
     });
 
     socket.on('player:damage', data => {
-        const room = getPlayerRoom(socket);
+        const room = findRoom(socket);
         if (!room || !data) return;
 
         const target = room.players.get(String(data.target));
-        if (!target || target.id === socket.id) return;
-
         const attacker = room.players.get(socket.id);
 
-        if (!attacker || attacker.team === target.team) return;
+        if (!target || !attacker || target.id === attacker.id) return;
+        if (target.team === attacker.team) return;
 
         const damage = Math.max(
             0,
@@ -254,12 +268,10 @@ io.on('connection', socket => {
 
         target.health = Math.max(0, target.health - damage);
 
-        if (target.health <= 0) {
+        if (target.health === 0) {
             target.deaths++;
             attacker.kills++;
-
             room.state.score[attacker.team]++;
-
             target.health = 100;
 
             io.to(room.id).emit('player:eliminated', {
@@ -269,43 +281,27 @@ io.on('connection', socket => {
             });
         }
 
-        broadcastRoom(room);
+        broadcast(room);
     });
 
     socket.on('team:change', team => {
-        const room = getPlayerRoom(socket);
-        if (!room) return;
+        const room = findRoom(socket);
+        if (!room || !['blue', 'red'].includes(team)) return;
 
-        if (team !== 'blue' && team !== 'red') return;
-
-        const player = room.players.get(socket.id);
-        player.team = team;
-
-        broadcastRoom(room);
+        room.players.get(socket.id).team = team;
+        broadcast(room);
     });
 
     socket.on('mode:change', mode => {
-        const room = getPlayerRoom(socket);
-        if (!room) return;
-
-        const allowed = [
-            'FREE MODE',
-            'TEAM FIGHT',
-            'ELITE SQUAD',
-            'TIME MODE',
-            'OBJECTIVE MODE',
-            'SURVIVAL',
-            'TRAINING'
-        ];
-
-        if (!allowed.includes(mode)) return;
+        const room = findRoom(socket);
+        if (!room || !MODES.includes(mode)) return;
 
         room.mode = mode;
-        broadcastRoom(room);
+        broadcast(room);
     });
 
     socket.on('chat:send', message => {
-        const room = getPlayerRoom(socket);
+        const room = findRoom(socket);
         if (!room) return;
 
         const player = room.players.get(socket.id);
@@ -325,28 +321,10 @@ io.on('connection', socket => {
 
     socket.on('disconnect', () => {
         leaveRoom(socket);
-        console.log('Desconectado:', socket.id);
+        console.log('Player desconectado:', socket.id);
     });
 });
 
-function leaveRoom(socket) {
-    const room = getPlayerRoom(socket);
-    if (!room) return;
-
-    room.players.delete(socket.id);
-    socket.leave(room.id);
-
-    io.to(room.id).emit('player:left', {
-        id: socket.id
-    });
-
-    if (room.players.size === 0) {
-        rooms.delete(room.id);
-    } else {
-        broadcastRoom(room);
-    }
-}
-
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`PROJECT ZERO SERVER: PORT ${PORT}`);
+    console.log(`PROJECT ZERO SERVER running on port ${PORT}`);
 });
